@@ -1,0 +1,24 @@
+{
+  "name": "punkachu-tools",
+  "owner": {
+    "name": "Julien .L",
+    "email": "thehiphacker@gmail.com"
+  },
+  "metadata": {
+    "description": "Claude Code set up project plugins by Julien .L",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "format-on-edit",
+      "source": "./",
+      "description": "Auto-format files after Claude edits them: TS/JS, Go, Dart/Flutter, Python, C/C++, Kotlin, Swift.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Julien .L"
+      },
+      "license": "Apache-2.0",
+      "keywords": ["formatter", "hooks"]
+    }
+  ]
+}
