@@ -92,6 +92,10 @@ class BlockEnvAccessTest(unittest.TestCase):
         commands = [h["command"] for entry in hooks if entry["matcher"] == "Bash" for h in entry["hooks"]]
         self.assertEqual(commands, ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-env-access.sh"])
 
+    def test_marketplace_lists_plugin_by_its_name(self):
+        market = json.loads((PLUGIN.parent / "marketplace.json").read_text())
+        self.assertEqual([p["name"] for p in market["plugins"]], [json.loads(PLUGIN.read_text())["name"]])
+
 
 if __name__ == "__main__":
     unittest.main()

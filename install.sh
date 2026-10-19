@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Install every formatter format-changed-file.sh uses. Safe to re-run: skips what's already installed.
-# Needs Homebrew (macOS, or Linux via https://brew.sh).
+# Set up the max_settings plugin's dependencies. Safe to re-run.
+#   1. Installs the tools the hooks call (skips what's already installed). Needs Homebrew.
+#   2. Merges the .env deny rules from .claude/settings.json into ~/.claude/settings.json.
 set -euo pipefail
+root=$(cd "$(dirname "$0")" && pwd)
 
 command -v brew >/dev/null || { echo "Homebrew not found: install it from https://brew.sh" >&2; exit 1; }
 
@@ -31,3 +33,14 @@ else
   echo "install  dart"
   brew tap dart-lang/dart && brew install dart
 fi
+
+# Deny rules: append the ones missing, keep the user's order and other settings.
+settings="$HOME/.claude/settings.json"
+mkdir -p "$HOME/.claude"
+[ -s "$settings" ] || echo '{}' > "$settings"
+cp "$settings" "$settings.bak"
+jq --argjson rules "$(jq '.permissions.deny' "$root/.claude/settings.json")" \
+  '.permissions.deny = ((.permissions.deny // []) as $d | $d + ($rules - $d))' \
+  "$settings" > "$settings.tmp"
+mv "$settings.tmp" "$settings"
+echo "ok       .env deny rules in $settings (backup: $settings.bak)"

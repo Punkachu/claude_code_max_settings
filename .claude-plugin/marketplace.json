@@ -10,7 +10,7 @@
   },
   "plugins": [
     {
-      "name": "format-on-edit",
+      "name": "max_settings",
       "source": "./",
       "description": "Auto-format files after Claude edits them: TS/JS, Go, Dart/Flutter, Python, C/C++, Kotlin, Swift.",
       "version": "1.0.0",
@@ -18,7 +18,10 @@
         "name": "Julien .L"
       },
       "license": "Apache-2.0",
-      "keywords": ["formatter", "hooks"]
+      "keywords": [
+        "formatter",
+        "hooks"
+      ]
     }
   ]
 }
