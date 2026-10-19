@@ -1,4 +1,4 @@
-"""Tests for hooks/scripts/block-env-access.sh.
+"""Tests for hooks/scripts/block-env-access.sh (Bash commands and file tools).
 
 Run: python3 -m unittest discover tests   (pytest tests also works)
 """
@@ -54,8 +54,34 @@ ALLOWED = [
 ]
 
 
-def run(command, path=None):
-    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+# (tool, tool_input) for Claude's file tools
+FILE_BLOCKED = [
+    ("Read", {"file_path": "/app/.env"}),
+    ("Read", {"file_path": ".env"}),
+    ("Read", {"file_path": "/app/config/.env.production"}),
+    ("Edit", {"file_path": "/app/.env", "old_string": "a", "new_string": "b"}),
+    ("Write", {"file_path": "/app/.env.local", "content": "KEY=1"}),
+    ("MultiEdit", {"file_path": "/app/.env", "edits": []}),
+    ("NotebookEdit", {"notebook_path": "/app/.env", "new_source": "x"}),
+    ("Grep", {"pattern": "KEY", "path": "/app/.env"}),
+    ("Grep", {"pattern": "KEY", "glob": ".env*"}),
+    ("Grep", {"pattern": "KEY", "path": "/app", "glob": "**/.env"}),
+]
+
+FILE_ALLOWED = [
+    ("Read", {"file_path": "/app/.env.example"}),
+    ("Write", {"file_path": "/app/.env.template", "content": "KEY="}),
+    ("Read", {"file_path": "/app/.environment"}),
+    ("Read", {"file_path": "/app/.envrc"}),
+    ("Read", {"file_path": "/app/src/env.ts"}),
+    ("Edit", {"file_path": "/app/.venv/lib/site.py", "old_string": "a", "new_string": "b"}),
+    ("Grep", {"pattern": ".env", "path": "/app/src"}),  # searching FOR the text ".env" is fine
+    ("Read", {}),
+]
+
+
+def run(command, path=None, tool="Bash", tool_input=None):
+    payload = json.dumps({"tool_name": tool, "tool_input": tool_input or {"command": command}})
     env = {"PATH": path} if path is not None else None
     return subprocess.run([BASH, str(SCRIPT)], input=payload, text=True, capture_output=True, timeout=10, env=env)
 
@@ -78,6 +104,19 @@ class BlockEnvAccessTest(unittest.TestCase):
                 proc = run(command)
                 self.assertEqual((proc.returncode, proc.stderr), (0, ""))
 
+    def test_blocks_file_tools_on_env(self):
+        for tool, tool_input in FILE_BLOCKED:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                proc = run(None, tool=tool, tool_input=tool_input)
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn("Blocked", proc.stderr)
+
+    def test_allows_file_tools_elsewhere(self):
+        for tool, tool_input in FILE_ALLOWED:
+            with self.subTest(tool=tool, tool_input=tool_input):
+                proc = run(None, tool=tool, tool_input=tool_input or {"file_path": ""})
+                self.assertEqual((proc.returncode, proc.stderr), (0, ""))
+
     def test_template_does_not_hide_real_env(self):
         self.assertEqual(run("cp .env.example .env").returncode, 2)
 
@@ -89,8 +128,10 @@ class BlockEnvAccessTest(unittest.TestCase):
 
     def test_plugin_registers_hook(self):
         hooks = json.loads(PLUGIN.read_text())["hooks"]["PreToolUse"]
-        commands = [h["command"] for entry in hooks if entry["matcher"] == "Bash" for h in entry["hooks"]]
-        self.assertEqual(commands, ["${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-env-access.sh"])
+        self.assertEqual(
+            [(entry["matcher"], h["command"]) for entry in hooks for h in entry["hooks"]],
+            [("Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep", "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-env-access.sh")],
+        )
 
     def test_marketplace_lists_plugin_by_its_name(self):
         market = json.loads((PLUGIN.parent / "marketplace.json").read_text())

@@ -5,7 +5,7 @@ A small Claude Code plugin with two hooks:
 | Hook | Runs | Job |
 |---|---|---|
 | **Format on edit** | after every `Edit` / `Write` / `MultiEdit` | formats the file Claude just changed |
-| **.env guardrail** | before every `Bash` command | blocks commands that touch `.env` files |
+| **.env guardrail** | before `Bash`, `Read`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Grep` | blocks any access to `.env` files |
 
 ## Install
 
@@ -73,7 +73,7 @@ int main() {
 
 ## 🔒 .env guardrail
 
-Blocks any Bash command that mentions a `.env` file, and denies the Read tool on `.env` files.
+Blocks Bash commands and Claude's file tools when they touch a `.env` file.
 
 ```text
 cat .env                        ⛔ blocked
@@ -86,27 +86,37 @@ node -e 'process.env.HOME'      ✅ allowed
 python -m venv .venv            ✅ allowed
 ```
 
-Claude sees: `Blocked: terminal access referencing .env files is prohibited.`
+```text
+Read   /app/.env                ⛔ blocked
+Write  /app/.env.local          ⛔ blocked
+Grep   KEY  --glob ".env*"      ⛔ blocked
+
+Read   /app/.env.example        ✅ allowed
+Grep   ".env"  in /app/src      ✅ allowed   (searching for the text is fine)
+```
+
+Claude sees: `Blocked: access to .env files is prohibited.`
 
 ### ✅ Does
 - Covers `.env` and every `.env.*` variant, at any depth, quoted or chained (`ls && cat .env`).
-- Allows committed templates in Bash: `.env.example`, `.env.sample`, `.env.template`.
-- Blocks every Bash command if `jq` is missing, rather than silently doing nothing.
+- Blocks reads **and writes**: Claude can't open, create or edit a `.env` file.
+- Allows committed templates: `.env.example`, `.env.sample`, `.env.template`.
+- Blocks every guarded call if `jq` is missing, rather than silently doing nothing.
 
 ### ❌ Does not
-- **Stop writes.** Claude can still create or edit a `.env` file.
+- Let Claude set up a `.env` for you. Copy `.env.example` yourself.
 - Cover `*.env` names (`prod.env`) or other secret files (`.envrc`, `credentials.json`, `*.pem`).
 
 ### ⚠️ Limitations
 - **It's a speed bump, not a vault.** It matches text, so `cat .e""nv`, base64 tricks or a script that reads the file get through. Keep real secrets out of the repo.
-- The Read deny rules can't make exceptions, so the Read tool can't open `.env.example` either.
+- `install.sh` also adds `Read(**/.env)` and `Read(**/.env.*)` deny rules as a backup. Those can't make exceptions, so with them installed the Read tool can't open `.env.example` either.
 
 ---
 
 ## Tests
 
 ```bash
-python3 -m unittest discover tests   # hermetic: formatters are stubbed
+python3 tests/run_all.py             # every suite; fails on any skip (use this in CI)
 python3 tests/show_formatting.py     # before/after with your real formatters
 ```
 
