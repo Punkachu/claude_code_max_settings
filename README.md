@@ -116,7 +116,7 @@ Claude sees: `Blocked: access to .env files is prohibited.`
 ## Tests
 
 ```bash
-python3 -m unittest discover tests   # hermetic: formatters are stubbed
+python3 tests/run_all.py             # every suite; fails on any skip (use this in CI)
 python3 tests/show_formatting.py     # before/after with your real formatters
 ```
 
