@@ -171,8 +171,8 @@ KNOWN_FALSE_POSITIVES = [
 ]
 
 
-def run(command, path=None):
-    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+def run(command, path=None, cwd=None):
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, **({"cwd": cwd} if cwd else {})})
     env = {"PATH": path} if path is not None else None
     return subprocess.run([BASH, str(SCRIPT)], input=payload, text=True, capture_output=True, timeout=10, env=env)
 
@@ -222,6 +222,84 @@ class BlockDangerousCommandsTest(unittest.TestCase):
             proc = run("ls", path=empty)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("jq", proc.stderr)
+
+
+# file name -> contents, written into a temp project dir
+SCRIPTS = {
+    "cleanup.sh": "#!/bin/bash\nset -e\nrm -rf /\n",
+    "deploy.sh": "#!/bin/sh\ngit add .\ngit push --force origin main\n",
+    "scripts/reset-db.sh": "psql -c 'DROP TABLE users'\n",
+    "run": "#!/usr/bin/env bash\nterraform destroy\n",
+    "safe.sh": "#!/bin/bash\necho building\nnpm run build\n",
+    "commented.sh": "#!/bin/bash\n# never: rm -rf /\n  # git push --force\necho ok\n",
+    "app": "not a script, mentions rm -rf / in data\n",
+    "nested.sh": "#!/bin/bash\n./cleanup.sh\n",
+}
+
+SCRIPT_BLOCKED = {
+    "./cleanup.sh": ("rm-critical-path", "./cleanup.sh"),
+    "bash cleanup.sh": ("rm-critical-path", "cleanup.sh"),
+    "sh -e deploy.sh": ("git-force-push", "deploy.sh"),
+    "zsh ./deploy.sh": ("git-force-push", "./deploy.sh"),
+    "source scripts/reset-db.sh": ("sql-drop", "scripts/reset-db.sh"),
+    ". scripts/reset-db.sh": ("sql-drop", "scripts/reset-db.sh"),
+    "sudo ./cleanup.sh": ("rm-critical-path", "./cleanup.sh"),
+    "FOO=1 ./cleanup.sh": ("rm-critical-path", "./cleanup.sh"),
+    "npm run build && ./cleanup.sh": ("rm-critical-path", "./cleanup.sh"),
+    "./run": ("terraform-destroy", "./run"),  # no extension, but a shell shebang
+}
+
+SCRIPT_ALLOWED = [
+    "./safe.sh",
+    "bash safe.sh",
+    "./commented.sh",          # dangerous text only in comments
+    "cat cleanup.sh",          # reading a script is not running it
+    "less deploy.sh",
+    "bash -c 'echo hi'",       # inline code is checked as the command itself
+    "./missing.sh",
+    "./app",                   # no .sh name, no shebang: not a shell script
+    "./nested.sh",             # one level deep only (documented limitation)
+    "python3 cleanup.py",
+]
+
+
+@unittest.skipUnless(BASH and JQ, "needs bash and jq")
+class ScriptContentsTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+        for name, body in SCRIPTS.items():
+            path = Path(self.dir, name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+            path.chmod(0o755)
+
+    def test_blocks_dangerous_scripts(self):
+        for command, (rule, where) in SCRIPT_BLOCKED.items():
+            with self.subTest(command=command):
+                proc = run(command, cwd=self.dir)
+                self.assertEqual(proc.returncode, 2)
+                self.assertIn(f"Blocked [{rule}] in {where}:", proc.stderr)
+
+    def test_allows_safe_scripts(self):
+        for command in SCRIPT_ALLOWED:
+            with self.subTest(command=command):
+                proc = run(command, cwd=self.dir)
+                self.assertEqual((proc.returncode, proc.stderr), (0, ""))
+
+    def test_paths_resolve_from_hook_cwd(self):
+        # Without the payload's cwd the script isn't found from the test runner's directory.
+        self.assertEqual(run("./cleanup.sh").returncode, 0)
+        self.assertEqual(run("./cleanup.sh", cwd=self.dir).returncode, 2)
+
+    def test_home_path(self):
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, "wipe.sh").write_text("rm -rf ~\n")
+            payload = json.dumps({"tool_input": {"command": "bash ~/wipe.sh"}})
+            proc = subprocess.run([BASH, str(SCRIPT)], input=payload, text=True, capture_output=True,
+                                  timeout=10, env={**os.environ, "HOME": home})
+        self.assertIn("in " + home + "/wipe.sh", proc.stderr)
 
 
 if __name__ == "__main__":

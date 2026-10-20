@@ -1,6 +1,6 @@
 {
   "name": "max_settings",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Auto-format files after Claude edits them: TS/JS (prettier), Go, Dart/Flutter, Python (ruff), C/C++ (clang-format), Kotlin (ktlint), Swift (swiftformat). Blocks Bash commands that read .env files. Blocks destructive commands (rm -rf /, force push, DROP TABLE, terraform destroy...).",
   "author": {
     "name": "Julien .L",
