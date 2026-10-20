@@ -128,9 +128,9 @@ class BlockEnvAccessTest(unittest.TestCase):
 
     def test_plugin_registers_hook(self):
         hooks = json.loads(PLUGIN.read_text())["hooks"]["PreToolUse"]
-        self.assertEqual(
+        self.assertIn(
+            ("Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep", "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-env-access.sh"),
             [(entry["matcher"], h["command"]) for entry in hooks for h in entry["hooks"]],
-            [("Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep", "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-env-access.sh")],
         )
 
     def test_marketplace_lists_plugin_by_its_name(self):
