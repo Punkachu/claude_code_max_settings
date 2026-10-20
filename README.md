@@ -6,7 +6,7 @@ A small Claude Code plugin with three hooks:
 |---|---|---|
 | **Format on edit** | after every `Edit` / `Write` / `MultiEdit` | formats the file Claude just changed |
 | **.env guardrail** | before `Bash`, `Read`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, `Grep` | blocks any access to `.env` files |
-| **Dangerous-command guardrail** | before every `Bash` command | blocks commands that destroy data, history or infrastructure |
+| **Dangerous-command guardrail** | before every `Bash` command | blocks commands that destroy data, history or infrastructure, including inside the scripts they run |
 
 ## Install
 
@@ -190,15 +190,43 @@ Matched in any case (`drop table`, `DROP TABLE`, `Drop Table`), whatever the cli
 
 > `npm publish --dry-run && npm publish` is still blocked: each command in a chain is checked on its own.
 
+### Scripts are checked too
+
+When Claude **runs** a shell script, the guardrail reads it and applies the same rules to every line:
+
+```text
+$ cat deploy.sh
+#!/bin/sh
+git push --force origin main
+
+$ ./deploy.sh
+Blocked [git-force-push] in ./deploy.sh: Force push rewrites shared history. ...
+```
+
+| Command | Script checked? |
+|---|---|
+| `./x.sh` · `scripts/x.sh` · `sudo ./x.sh` · `FOO=1 ./x.sh` · `make && ./x.sh` | ✅ |
+| `bash x.sh` · `sh -e x.sh` · `zsh x.sh` · `source x.sh` · `. x.sh` | ✅ |
+| `./run` (no extension, starts with `#!/bin/bash`) | ✅ |
+| `cat x.sh` · `less x.sh` (reading isn't running) | ➖ not needed |
+| `./app` (binary, or no shell shebang) | ❌ skipped |
+| `python3 x.py` · `node x.js` · `make` · `npm run x` | ❌ not checked |
+
+Comment lines (`# rm -rf /`) are ignored, so a script that only *mentions* a dangerous command still runs.
+
 ### ✅ Does
 - Checks every Bash command Claude runs, including chains (`a && b`, `a; b`, `a | b`) and `sudo`.
+- Checks the contents of shell scripts those commands run (see above).
 - Sees through simple disguises: `"rm" -rf '/'`, `\rm`, `/bin/rm`.
 - Blocks every command if `jq` is missing, rather than silently doing nothing.
 - Adds about 8 ms per command.
 
 ### ❌ Does not
 - Check commands **you** run in your own terminal.
-- Check what scripts do: `./cleanup.sh` runs even if it contains `rm -rf /`.
+- Follow scripts that call other scripts: only the first level is read.
+- Read non-shell code: `python3 x.py`, `node x.js`, `Makefile` targets and `package.json` scripts aren't checked.
+- Track `cd`: in `cd sub && ./x.sh`, `x.sh` is looked up in the starting folder, not in `sub/`, so `sub/x.sh` isn't checked.
+- Read past the first 200 KB of a script.
 - Catch `UPDATE` without `WHERE` (a pattern can't check that something is missing).
 - Cover `helm uninstall`, `docker push`, or deleting cloud resources other than those above.
 
