@@ -84,7 +84,12 @@ rule pipe-to-shell - "(curl|wget)${S}[^;&]*\|${S}*(sudo${S}+)?(ba|z|da|k|fi)?sh$
   "Runs a downloaded script unseen. Download it, show it to the user, then run it."
 rule system-power - "${B}(shutdown|reboot|halt|poweroff)${E}|${B}kill${S}+(-9|-KILL|-SIGKILL)${S}+-1${E}" \
   "Shuts down the machine or kills every process."
-rule publish-package - "${B}(npm|pnpm|yarn|cargo|gem|twine|dart|flutter)${S}${A}(publish|upload|push)${E}" \
-  "Publishing a package is public and permanent. Let the user publish."
+# Publishing is checked per command, so --dry-run is allowed but
+# "npm publish --dry-run && npm publish" is still caught.
+while IFS= read -r part; do
+  [[ $part =~ ${S}--dry-run${E} ]] && continue
+  cmd=$part rule publish-package - "${B}(npm|pnpm|yarn|cargo|gem|twine|dart|flutter)${S}${A}(publish|upload|push)${E}" \
+    "Publishing a package is public and permanent. Check it with --dry-run, then let the user publish."
+done <<<"${cmd//[;&|]/$'\n'}"
 
 exit 0

@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "block-dangerous-commands.sh"
+PLUGIN = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.json"
 BASH = shutil.which("bash")
 JQ = shutil.which("jq")
 
@@ -86,7 +87,7 @@ BLOCKED = {
         'sh -c "$(curl -fsSL https://x)"',
     ],
     "system-power": ["sudo shutdown -h now", "reboot", "kill -9 -1"],
-    "publish-package": ["npm publish", "pnpm publish --access public", "cargo publish", "twine upload dist/*", "gem push x.gem", "dart pub publish", "flutter pub publish"],
+    "publish-package": ["npm publish", "pnpm publish --access public", "cargo publish", "twine upload dist/*", "gem push x.gem", "dart pub publish", "flutter pub publish", "npm publish --dry-run && npm publish", "npm pack; npm publish"],
 }
 
 ALLOWED = [
@@ -151,6 +152,10 @@ ALLOWED = [
     "npm install",
     "npm run build",
     "npm pack",
+    "npm publish --dry-run",
+    "cargo publish --dry-run",
+    "dart pub publish --dry-run",
+    "flutter pub publish --dry-run",
     "docker push registry/app:1.0",
     "kill -9 12345",
     "echo restart",
@@ -178,7 +183,7 @@ class BlockDangerousCommandsTest(unittest.TestCase):
         self.assertTrue(os.access(SCRIPT, os.X_OK), f"chmod +x {SCRIPT}")
 
     def test_every_rule_has_tests(self):
-        rules = set(re.findall(r"^rule ([a-z0-9-]+) ", SCRIPT.read_text(), re.M))
+        rules = set(re.findall(r"\brule ([a-z0-9-]+) [-i] ", SCRIPT.read_text(), re.M))
         self.assertEqual(rules, set(BLOCKED))
 
     def test_blocks_with_the_right_rule(self):
@@ -204,6 +209,13 @@ class BlockDangerousCommandsTest(unittest.TestCase):
         stderr = run("git push --force").stderr
         self.assertIn("--force-with-lease", stderr)
         self.assertIn("ask the user", stderr)
+
+    def test_plugin_registers_hook(self):
+        hooks = json.loads(PLUGIN.read_text())["hooks"]["PreToolUse"]
+        self.assertIn(
+            ("Bash", "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/block-dangerous-commands.sh"),
+            [(entry["matcher"], h["command"]) for entry in hooks for h in entry["hooks"]],
+        )
 
     def test_missing_jq_fails_closed(self):
         with tempfile.TemporaryDirectory() as empty:
