@@ -1,6 +1,6 @@
 # max_settings
 
-A small Claude Code plugin with three hooks:
+A small Claude Code plugin with three hooks, plus a log of everything the guardrails block:
 
 | Hook | Runs | Job |
 |---|---|---|
@@ -240,6 +240,57 @@ Comment lines (`# rm -rf /`) are ignored, so a script that only *mentions* a dan
   Claude will ask you to run these, or reword them (for example, a commit message without the command).
 - **Easy to get around on purpose:** `x=rm; $x -rf /`, base64, or writing a script first. It stops **mistakes**, not someone trying to cause damage.
 - **A noisy rule?** Delete just that `rule …` line in `hooks/scripts/block-dangerous-commands.sh`. Don't turn off the whole hook: you'd lose all 27 rules.
+
+---
+
+## 📒 Block log and escalation
+
+Both guardrails write every block to **`~/.claude/guardrail.log`**, one tab-separated line each:
+
+```text
+2026-10-22T14:03:11Z  4f1c…  git-reset-hard  /Users/me/my-app  git reset --hard
+2026-10-22T14:03:40Z  4f1c…  git-clean-force /Users/me/my-app  git clean -fd
+2026-10-22T14:04:02Z  4f1c…  env-access      /Users/me/my-app  cat .env
+```
+
+Columns: time (UTC) · session · rule · folder · command.
+
+### Escalation
+
+One block is the guardrail doing its job. Several in the same session mean the agent's plan has gone wrong. From the **3rd block in a session**, Claude also gets:
+
+```text
+Guardrail: this is blocked command #3 in this session. Stop trying workarounds.
+Tell the user what you were trying to do and why it keeps getting blocked,
+then wait for their go-ahead.
+```
+
+Blocks from both guardrails count together.
+
+### Reading the log
+
+```bash
+tail -20 ~/.claude/guardrail.log                                 # latest blocks
+cut -f3 ~/.claude/guardrail.log | sort | uniq -c | sort -rn      # most-hit rules
+cut -f2 ~/.claude/guardrail.log | sort | uniq -c | awk '$1 >= 3' # sessions worth a look
+```
+
+### Settings
+
+| Variable | Default | Effect |
+|---|---|---|
+| `CLAUDE_GUARDRAIL_LOG` | `~/.claude/guardrail.log` | where blocks are written |
+| `CLAUDE_GUARDRAIL_ESCALATE_AFTER` | `3` | block number from which Claude is told to stop and ask |
+
+### ✅ Does
+- Masks common secrets before writing: `user:pass@` in URLs, `Bearer` tokens, and `*KEY*`, `*TOKEN*`, `*SECRET*`, `*PASS*` values (`API_KEY=***`, `--password=***`).
+- Keeps each entry on one line and cuts commands to 300 characters.
+- Still blocks if the log can't be written.
+
+### ❌ Does not
+- Log allowed commands. Only blocks are recorded.
+- Rotate the file. It only grows, by one short line per block.
+- Mask every kind of secret: a token passed as a bare argument (`mysql -pS3cret`, `curl -u me:S3cret`) is written as is.
 
 ---
 
