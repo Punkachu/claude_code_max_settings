@@ -7,9 +7,14 @@
 # Fail closed: without jq we can't inspect the command.
 command -v jq >/dev/null || { echo "Blocked: jq is required by the dangerous-command guardrail." >&2; exit 2; }
 
+. "${BASH_SOURCE%/*}/guardrail-log.sh" || { echo "Blocked: guardrail-log.sh is missing." >&2; exit 2; }
+
 input=$(cat)
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
 dir=$(jq -r '.cwd // empty' <<<"$input")
+GUARD_SESSION=$(jq -r '.session_id // empty' <<<"$input")
+GUARD_CWD=${dir:-$PWD}
+GUARD_RAW=$cmd
 [ -n "$dir" ] && cd "$dir" 2>/dev/null
 # Drop quotes and backslashes so "rm" -rf '/', \rm and r''m all read as rm -rf /.
 cmd=${cmd//[\"\'\\]/}
@@ -24,8 +29,7 @@ where=""  # set to " in <script>" while checking a script's contents
 rule() { # id, i (ignore case) or -, regex, what to do instead
   if [ "$2" = i ]; then shopt -s nocasematch; else shopt -u nocasematch; fi
   if [[ $cmd =~ $3 ]]; then
-    echo "Blocked [$1]$where: $4 If it's really needed, ask the user to run it themselves." >&2
-    exit 2
+    guardrail_block "$1" "Blocked [$1]$where: $4 If it's really needed, ask the user to run it themselves."
   fi
 }
 

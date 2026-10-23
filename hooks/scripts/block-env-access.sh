@@ -6,9 +6,16 @@
 # Fail closed: without jq we can't inspect the call.
 command -v jq >/dev/null || { echo "Blocked: jq is required by the .env guardrail." >&2; exit 2; }
 
+. "${BASH_SOURCE%/*}/guardrail-log.sh" || { echo "Blocked: guardrail-log.sh is missing." >&2; exit 2; }
+
+input=$(cat)
+GUARD_SESSION=$(jq -r '.session_id // empty' <<<"$input")
+GUARD_CWD=$(jq -r '.cwd // empty' <<<"$input")
+
 # Bash: check the command. File tools (Read, Edit, Write, MultiEdit, NotebookEdit, Grep): check every path field.
 text=$(jq -r 'if .tool_name == "Bash" then .tool_input.command
-              else .tool_input | [.file_path, .notebook_path, .path, .glob] | map(strings) | join("\n") end // empty')
+              else .tool_input | [.file_path, .notebook_path, .path, .glob] | map(strings) | join("\n") end // empty' <<<"$input")
+GUARD_RAW=$text
 for safe in .env.example .env.sample .env.template; do
   text=${text//"$safe"/}
 done
@@ -16,7 +23,6 @@ done
 # ".env" as a filename: not preceded by a name char (so process.env, foo.env pass),
 # not followed by one (so .environment, .envrc pass); ".env.local" etc. still match.
 if printf '%s' "$text" | grep -qE '(^|[^[:alnum:]_])\.env([^[:alnum:]_-]|$)'; then
-  echo "Blocked: access to .env files is prohibited." >&2
-  exit 2
+  guardrail_block env-access "Blocked: access to .env files is prohibited."
 fi
 exit 0

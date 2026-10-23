@@ -16,6 +16,9 @@ PLUGIN = Path(__file__).resolve().parent.parent / ".claude-plugin" / "plugin.jso
 BASH = shutil.which("bash")
 JQ = shutil.which("jq")
 
+# Keep block logs out of the real ~/.claude/guardrail.log.
+os.environ["CLAUDE_GUARDRAIL_LOG"] = str(Path(tempfile.mkdtemp()) / "guardrail.log")
+
 BLOCKED = [
     "cat .env",
     "cat ./.env",
