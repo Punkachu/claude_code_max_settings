@@ -1,3 +1,5 @@
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Punkachu/badge.svg)](https://hub.xerj.org/contributors/Punkachu)
+
 # max_settings
 
 A small Claude Code plugin with three hooks, plus a log of everything the guardrails block:
